@@ -18,12 +18,12 @@
 #include <pcl/common/centroid.h>
 #include <pcl/common/common.h>
 
-#include <vision_msgs/msg/detection_3d_array.hpp>
-#include <vision_msgs/msg/detection_3d.hpp>
+#include <vision_msgs/msg/detection3_d_array.hpp>
+#include <vision_msgs/msg/detection3_d.hpp>
 #include <vision_msgs/msg/object_hypothesis_with_pose.hpp>
-#include <vision_msgs/msg/bounding_box_3d.hpp>
+#include <vision_msgs/msg/bounding_box3_d.hpp>
 #include <geometry_msgs/msg/pose.hpp>
-#include <geometry_msgs/msg/vector_3.hpp>
+#include <geometry_msgs/msg/vector3.hpp>
 
 #include "bboxes_ex_msgs/msg/bounding_box.hpp"
 #include "bboxes_ex_msgs/msg/bounding_boxes.hpp"
