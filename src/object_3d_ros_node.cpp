@@ -86,6 +86,15 @@ private:
       const sensor_msgs::msg::Image::ConstSharedPtr &depth_msg,
       const sensor_msgs::msg::CameraInfo::ConstSharedPtr &info_msg) {
 
+    if (latest_detections_.empty()) {
+      RCLCPP_WARN(this->get_logger(), "No detections received yet.");
+      return;
+    }
+    if (!rgb_msg || !depth_msg || !info_msg) {
+      RCLCPP_ERROR(this->get_logger(), "Received null message(s).");
+      return;
+    }
+
     cv::Mat rgb = cv_bridge::toCvShare(rgb_msg, "bgr8")->image;
     cv::Mat depth = cv_bridge::toCvShare(depth_msg)->image;
 
@@ -100,10 +109,14 @@ private:
     detection_array.header = rgb_msg->header;
 
     for (const auto &det : detections) {
-      if (std::find(allowed_classes_.begin(), allowed_classes_.end(), det.class_name) == allowed_classes_.end())
+      if (std::find(allowed_classes_.begin(), allowed_classes_.end(), det.class_name) == allowed_classes_.end()) {
+        RCLCPP_DEBUG(this->get_logger(), "Skipping detection: %s", det.class_name.c_str());
         continue;
-      if (det.confidence < 0.3)
+      }
+      if (det.confidence < 0.3) {
+        RCLCPP_DEBUG(this->get_logger(), "Skipping detection with low confidence: %s (%.2f)", det.class_name.c_str(), det.confidence);
         continue;
+      }
 
       cv::Mat roi = depth(cv::Rect(det.x_min, det.y_min, det.x_max - det.x_min, det.y_max - det.y_min));
       pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
@@ -128,7 +141,10 @@ private:
       }
 
       float coverage = float(cloud->size()) / (roi.rows * roi.cols);
-      if (coverage < 0.4) continue;
+      if (coverage < 0.4) {
+        RCLCPP_DEBUG(this->get_logger(), "Skipping detection with low coverage: %s (coverage: %.2f)", det.class_name.c_str(), coverage);
+        continue;
+      }
 
       pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
       sor.setInputCloud(cloud);
@@ -174,7 +190,9 @@ private:
   void detectionsCallback(const bboxes_ex_msgs::msg::BoundingBoxes::SharedPtr msg) {
     latest_detections_.clear();
     for (const auto &d : msg->bounding_boxes) {
+      RCLCPP_DEBUG(this->get_logger(), "Received detection: %s with confidence %.2f", d.class_id.c_str(), d.probability);
         if (std::find(allowed_classes_.begin(), allowed_classes_.end(), d.class_id) != allowed_classes_.end()) {
+            RCLCPP_DEBUG(this->get_logger(), "Adding detection: %s", d.class_id.c_str());
             latest_detections_.emplace_back(Detection{d.class_id, d.probability, d.xmin, d.ymin, d.xmax, d.ymax});
         }
     }
