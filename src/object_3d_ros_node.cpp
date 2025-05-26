@@ -163,6 +163,8 @@ private:
 
           *total_cloud += *cloud;
 
+          RCLCPP_WARN(this->get_logger(), "Filtered cloud size: %zu points for detection: %s", cloud->size(), det.class_name.c_str());
+
           Eigen::Vector4f centroid;
           pcl::compute3DCentroid(*cloud, centroid);
 
