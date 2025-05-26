@@ -116,7 +116,11 @@ private:
       std::vector<Detection> detections = latest_detections_;
       pcl::PointCloud<pcl::PointXYZRGB>::Ptr total_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
       vision_msgs::msg::Detection3DArray detection_array;
+
+      // Set output frame to d435_link
+      std::string output_frame = "d435_link";
       detection_array.header = rgb_msg->header;
+      detection_array.header.frame_id = output_frame;
 
       for (const auto &det : detections) {
         if (std::find(allowed_classes_.begin(), allowed_classes_.end(), det.class_name) == allowed_classes_.end()) {
@@ -194,11 +198,18 @@ private:
           }
 
           bool all_nan = true;
-          for (const auto& pt : cloud->points) {
-            if (std::isfinite(pt.x) && std::isfinite(pt.y) && std::isfinite(pt.z)) {
+          for (const auto& point : cloud->points) {
+            if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z)) {
               all_nan = false;
-              break;
             }
+            
+            // Transform points from camera optical frame to camera_link frame
+            float x_opt = point.x;
+            float y_opt = point.y;
+            float z_opt = point.z;
+            point.x = z_opt;
+            point.y = -x_opt;
+            point.z = -y_opt;
           }
 
           if (all_nan) {
@@ -219,6 +230,7 @@ private:
 
           vision_msgs::msg::Detection3D detection;
           detection.header = rgb_msg->header;
+          detection.header.frame_id = output_frame;
 
           vision_msgs::msg::ObjectHypothesisWithPose hypo;
           hypo.id = det.class_name;
@@ -250,6 +262,7 @@ private:
       sensor_msgs::msg::PointCloud2 cloud_msg;
       pcl::toROSMsg(*total_cloud, cloud_msg);
       cloud_msg.header = rgb_msg->header;
+      cloud_msg.header.frame_id = output_frame;
       pointcloud_pub_->publish(cloud_msg);
       detection_pub_->publish(detection_array);
     } catch (const cv::Exception& e) {
