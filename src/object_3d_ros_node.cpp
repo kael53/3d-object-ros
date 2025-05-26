@@ -186,24 +186,12 @@ private:
           sor.setStddevMulThresh(1.0);
           sor.filter(*cloud);
 
-          *total_cloud += *cloud;
-
-          RCLCPP_WARN(this->get_logger(), "Filtered cloud size: %zu points for detection: %s", cloud->size(), det.class_name.c_str());
-
-          std::vector<int> indices;
-          pcl::removeNaNFromPointCloud(*cloud, *cloud, indices);
-          if (cloud->empty()) {
-            RCLCPP_WARN(this->get_logger(), "Cloud is empty after removing NaNs for detection: %s", det.class_name.c_str());
-            continue;
-          }
-
           bool all_nan = true;
+          // Transform points from camera optical frame to camera_link frame BEFORE adding to total_cloud
           for (auto& point : cloud->points) {
             if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z)) {
               all_nan = false;
             }
-            
-            // Transform points from camera optical frame to camera_link frame
             float x_opt = point.x;
             float y_opt = point.y;
             float z_opt = point.z;
@@ -214,6 +202,17 @@ private:
 
           if (all_nan) {
             RCLCPP_WARN(this->get_logger(), "All points are NaN/Inf for detection: %s", det.class_name.c_str());
+            continue;
+          }
+
+          *total_cloud += *cloud;
+
+          RCLCPP_WARN(this->get_logger(), "Filtered cloud size: %zu points for detection: %s", cloud->size(), det.class_name.c_str());
+
+          std::vector<int> indices;
+          pcl::removeNaNFromPointCloud(*cloud, *cloud, indices);
+          if (cloud->empty()) {
+            RCLCPP_WARN(this->get_logger(), "Cloud is empty after removing NaNs for detection: %s", det.class_name.c_str());
             continue;
           }
 
