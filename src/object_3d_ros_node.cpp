@@ -60,7 +60,7 @@ public:
     pointcloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/objects_3d", 10);
     detection_pub_ = this->create_publisher<vision_msgs::msg::Detection3DArray>("/detections_3d", 10);
 
-    allowed_classes_ = {"cup", "bottle", "book"};
+    allowed_classes_ = {"cup", "bottle", "book", "bowl"};
   }
 
 private:
