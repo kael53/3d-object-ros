@@ -167,7 +167,7 @@ private:
           }
 
           float coverage = float(cloud->size()) / (roi.rows * roi.cols);
-          if (coverage < 0.4) {
+          if (coverage < 0.1) {
             RCLCPP_WARN(this->get_logger(), "Skipping detection with low coverage: %s (coverage: %.2f)", det.class_name.c_str(), coverage);
             continue;
           }
