@@ -95,7 +95,7 @@ private:
       return;
     }
     if ((rgb_msg->height != depth_msg->height) || (rgb_msg->width != depth_msg->width)) {
-      RCLCPP_ERRRO(this->get_logger(), "Image sizes are different.");
+      RCLCPP_ERROR(this->get_logger(), "Image sizes are different.");
       return;
     }
 
