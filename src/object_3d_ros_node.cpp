@@ -265,9 +265,9 @@ private:
   void detectionsCallback(const bboxes_ex_msgs::msg::BoundingBoxes::SharedPtr msg) {
     latest_detections_.clear();
     for (const auto &d : msg->bounding_boxes) {
-      RCLCPP_WARN(this->get_logger(), "Received detection: %s with confidence %.2f", d.class_id.c_str(), d.probability);
+      RCLCPP_DEBUG(this->get_logger(), "Received detection: %s with confidence %.2f", d.class_id.c_str(), d.probability);
         if (std::find(allowed_classes_.begin(), allowed_classes_.end(), d.class_id) != allowed_classes_.end()) {
-            RCLCPP_WARN(this->get_logger(), "Adding detection: %s", d.class_id.c_str());
+            RCLCPP_DEBUG(this->get_logger(), "Adding detection: %s", d.class_id.c_str());
             latest_detections_.emplace_back(Detection{d.class_id, d.probability, d.xmin, d.ymin, d.xmax, d.ymax});
         }
     }
