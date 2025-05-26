@@ -207,9 +207,9 @@ private:
             float x_opt = point.x;
             float y_opt = point.y;
             float z_opt = point.z;
-            //point.x = z_opt;
-            //point.y = -x_opt;
-            //point.z = -y_opt;
+            point.x = z_opt;
+            point.y = -x_opt;
+            point.z = -y_opt;
           }
 
           if (all_nan) {
