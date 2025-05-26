@@ -17,6 +17,8 @@
 #include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/common/centroid.h>
 #include <pcl/common/common.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/filters/extract_indices.h>
 
 #include <vision_msgs/msg/detection3_d_array.hpp>
 #include <vision_msgs/msg/detection3_d.hpp>
