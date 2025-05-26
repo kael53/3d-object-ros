@@ -23,6 +23,7 @@
 #include <vision_msgs/msg/object_hypothesis_with_pose.hpp>
 #include <vision_msgs/msg/bounding_box3_d.hpp>
 #include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_with_covariance.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 
 #include "bboxes_ex_msgs/msg/bounding_box.hpp"
@@ -33,8 +34,6 @@
 #include <cmath>
 #include <memory>
 
-namespace 3d_object_ros {
-
 struct Detection {
   std::string class_name;
   float confidence;
@@ -43,7 +42,7 @@ struct Detection {
 
 class YoloxTo3DNode : public rclcpp::Node {
 public:
-  YoloxTo3DNode() : Node("3d_object_ros_node") {
+  YoloxTo3DNode() : Node("object_3d_ros_node") {
 
     RCLCPP_INFO(this->get_logger(), "3D Object Detection Node Initialized");
     
@@ -149,8 +148,8 @@ private:
       detection.header = rgb_msg->header;
 
       vision_msgs::msg::ObjectHypothesisWithPose hypo;
-      hypo.hypothesis.class_id = det.class_name;
-      hypo.hypothesis.score = det.confidence;
+      hypo.id = det.class_name;
+      hypo.score = det.confidence;
       hypo.pose.pose.position.x = centroid[0];
       hypo.pose.pose.position.y = centroid[1];
       hypo.pose.pose.position.z = centroid[2];
@@ -174,21 +173,18 @@ private:
 
   void detectionsCallback(const bboxes_ex_msgs::msg::BoundingBoxes::SharedPtr msg) {
     latest_detections_.clear();
-    for (const auto &d : msg->detections) {
-        if (std::find(allowed_classes_.begin(), allowed_classes_.end(), d.class_name) != allowed_classes_.end()) {
+    for (const auto &d : msg->bounding_boxes) {
+        if (std::find(allowed_classes_.begin(), allowed_classes_.end(), d.class_id) != allowed_classes_.end()) {
             latest_detections_.emplace_back(Detection{d.class_id, d.probability, d.xmin, d.ymin, d.xmax, d.ymax});
         }
     }
   }
 
 };
-}
 
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<3d_object_ros::YoloxTo3DNode>());
+  rclcpp::spin(std::make_shared<YoloxTo3DNode>());
   rclcpp::shutdown();
   return 0;
 }
-
-RCLCPP_COMPONENTS_REGISTER_NODE(3d_object_ros::YoloxTo3DNode)

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>3d_object_ros</name>
+  <name>object_3d_ros</name>
   <version>0.1.0</version>
   <description>Node to convert YOLOX 2D detections to 3D centroids using RGB-D images</description>
 

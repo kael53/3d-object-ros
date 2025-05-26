@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(3d_object_ros)
+project(object_3d_ros)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -38,9 +38,9 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
 )
 
-add_executable(3d_object_ros_node src/3d_object_ros_node.cpp)
+add_executable(object_3d_ros_node src/object_3d_ros_node.cpp)
 
-ament_target_dependencies(3d_object_ros_node
+ament_target_dependencies(object_3d_ros_node
   rclcpp
   rclcpp_components
   vision_msgs
@@ -54,13 +54,13 @@ ament_target_dependencies(3d_object_ros_node
   pcl_conversions
 )
 
-target_link_libraries(3d_object_ros_node
+target_link_libraries(object_3d_ros_node
   ${OpenCV_LIBS}
   ${PCL_LIBRARIES}
 )
 
 install(TARGETS
-  3d_object_ros_node
+  object_3d_ros_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
