@@ -110,7 +110,7 @@ private:
 
       if (fx == 0.0f || fy == 0.0f) {
         RCLCPP_ERROR(this->get_logger(), "Camera intrinsics fx or fy is zero!");
-        continue;
+        return;
       }
 
       std::vector<Detection> detections = latest_detections_;
@@ -147,8 +147,8 @@ private:
             for (int u = 0; u < roi.cols; ++u) {
               float Z = roi.at<float>(v, u);
               if (!std::isfinite(Z) || Z <= 0.0 || Z > 3.0) continue;
-              int img_x = u + x_min;
-              int img_y = v + y_min;
+              int img_x = u + det.x_min;
+              int img_y = v + det.y_min;
               if (img_x < 0 || img_x >= rgb.cols || img_y < 0 || img_y >= rgb.rows) continue;
               float X = (img_x - cx) * Z / fx;
               float Y = (img_y - cy) * Z / fy;
