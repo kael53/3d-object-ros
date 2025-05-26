@@ -108,6 +108,11 @@ private:
       float cx = info_msg->k[2];
       float cy = info_msg->k[5];
 
+      if (fx == 0.0f || fy == 0.0f) {
+        RCLCPP_ERROR(this->get_logger(), "Camera intrinsics fx or fy is zero!");
+        continue;
+      }
+
       std::vector<Detection> detections = latest_detections_;
       pcl::PointCloud<pcl::PointXYZRGB>::Ptr total_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
       vision_msgs::msg::Detection3DArray detection_array;
@@ -123,6 +128,16 @@ private:
           continue;
         }
 
+        if (det.x_min < 0 || det.y_min < 0 || det.x_max > rgb.cols || det.y_max > rgb.rows) {
+          RCLCPP_WARN(this->get_logger(), "Skipping detection with out-of-bounds coordinates: %s", det.class_name.c_str());
+          continue;
+        }
+
+        if (det.x_min >= det.x_max || det.y_min >= det.y_max) {
+          RCLCPP_WARN(this->get_logger(), "Skipping detection with invalid bounding box: %s", det.class_name.c_str());
+          continue;
+        }
+
         RCLCPP_WARN(this->get_logger(), "Processing detection: %s (confidence: %.2f)", det.class_name.c_str(), det.confidence);
         try {
           cv::Mat roi = depth(cv::Rect(det.x_min, det.y_min, det.x_max - det.x_min, det.y_max - det.y_min));
@@ -132,15 +147,18 @@ private:
             for (int u = 0; u < roi.cols; ++u) {
               float Z = roi.at<float>(v, u);
               if (!std::isfinite(Z) || Z <= 0.0 || Z > 3.0) continue;
-              float X = (u + det.x_min - cx) * Z / fx;
-              float Y = (v + det.y_min - cy) * Z / fy;
+              int img_x = u + x_min;
+              int img_y = v + y_min;
+              if (img_x < 0 || img_x >= rgb.cols || img_y < 0 || img_y >= rgb.rows) continue;
+              float X = (img_x - cx) * Z / fx;
+              float Y = (img_y - cy) * Z / fy;
               if (!std::isfinite(X) || !std::isfinite(Y)) continue;
 
               pcl::PointXYZRGB point;
               point.x = X;
               point.y = Y;
               point.z = Z;
-              cv::Vec3b color = rgb.at<cv::Vec3b>(v + det.y_min, u + det.x_min);
+              cv::Vec3b color = rgb.at<cv::Vec3b>(img_y, img_x);
               point.r = color[2];
               point.g = color[1];
               point.b = color[0];
