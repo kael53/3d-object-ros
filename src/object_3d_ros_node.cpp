@@ -19,6 +19,7 @@
 #include <pcl/common/common.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/filters/extract_indices.h>
+#include <pcl/segmentation/extract_clusters.h>
 
 #include <vision_msgs/msg/detection3_d_array.hpp>
 #include <vision_msgs/msg/detection3_d.hpp>
@@ -169,69 +170,67 @@ private:
             }
           }
 
-          // --- RANSAC plane segmentation to remove table ---
-          pcl::SACSegmentation<pcl::PointXYZRGB> seg;
-          pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-          pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-          pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_no_table(new pcl::PointCloud<pcl::PointXYZRGB>());
+          // --- Euclidean clustering to isolate object from table ---
+          pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZRGB>());
+          tree->setInputCloud(cloud);
 
-          seg.setOptimizeCoefficients(true);
-          seg.setModelType(pcl::SACMODEL_PLANE);
-          seg.setMethodType(pcl::SAC_RANSAC);
-          seg.setDistanceThreshold(0.015); // 1.5cm, adjust as needed
-          seg.setInputCloud(cloud);
-          seg.segment(*inliers, *coefficients);
+          std::vector<pcl::PointIndices> cluster_indices;
+          pcl::EuclideanClusterExtraction<pcl::PointXYZRGB> ec;
+          ec.setClusterTolerance(0.02); // 2cm, adjust as needed
+          ec.setMinClusterSize(30);     // Minimum points for a valid object
+          ec.setMaxClusterSize(25000);
+          ec.setSearchMethod(tree);
+          ec.setInputCloud(cloud);
+          ec.extract(cluster_indices);
 
-          if (!inliers->indices.empty()) {
-            // Compute plane equation: ax + by + cz + d = 0
-            float a = coefficients->values[0];
-            float b = coefficients->values[1];
-            float c = coefficients->values[2];
-            float d = coefficients->values[3];
-
-            pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-            for (const auto& pt : cloud->points) {
-                // Distance from point to plane
-                float dist = a * pt.x + b * pt.y + c * pt.z + d;
-                if (dist > 0.01) { // 1cm above the plane, adjust as needed
-                    filtered_cloud->points.push_back(pt);
-                }
-            }
-            *cloud_no_table = *filtered_cloud;
-            RCLCPP_WARN(this->get_logger(), "Filtered table plane: removed %zu points, kept %zu above plane", inliers->indices.size(), cloud_no_table->size());
+          pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_object(new pcl::PointCloud<pcl::PointXYZRGB>());
+          if (!cluster_indices.empty()) {
+              // Find the largest cluster
+              size_t largest_idx = 0;
+              for (size_t i = 1; i < cluster_indices.size(); ++i) {
+                  if (cluster_indices[i].indices.size() > cluster_indices[largest_idx].indices.size())
+                      largest_idx = i;
+              }
+              for (int idx : cluster_indices[largest_idx].indices) {
+                  cloud_object->points.push_back(cloud->points[idx]);
+              }
+              cloud_object->width = cloud_object->points.size();
+              cloud_object->height = 1;
+              cloud_object->is_dense = true;
+              RCLCPP_WARN(this->get_logger(), "Clustering: selected largest cluster with %zu points", cloud_object->size());
           } else {
-            *cloud_no_table = *cloud;
-            RCLCPP_WARN(this->get_logger(), "No plane found for table filtering");
+              *cloud_object = *cloud;
+              RCLCPP_WARN(this->get_logger(), "Clustering: no clusters found, using all points");
           }
 
-          // Use cloud_no_table for further processing
-          float coverage = float(cloud_no_table->size()) / (roi.rows * roi.cols);
+          // Use cloud_object for further processing
+          float coverage = float(cloud_object->size()) / (roi.rows * roi.cols);
           if (coverage < 0.1) {
-            RCLCPP_WARN(this->get_logger(), "Skipping detection with low coverage after table filtering: %s (coverage: %.2f)", det.class_name.c_str(), coverage);
+            RCLCPP_WARN(this->get_logger(), "Skipping detection with low coverage after clustering: %s (coverage: %.2f)", det.class_name.c_str(), coverage);
             continue;
           }
 
-          RCLCPP_WARN(this->get_logger(), "Processing cloud with %zu points and coverage %f for detection: %s", cloud_no_table->size(), coverage, det.class_name.c_str());
+          RCLCPP_WARN(this->get_logger(), "Processing cloud with %zu points and coverage %f for detection: %s", cloud_object->size(), coverage, det.class_name.c_str());
 
           pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
-          sor.setInputCloud(cloud_no_table);
+          sor.setInputCloud(cloud_object);
           sor.setMeanK(20);
           sor.setStddevMulThresh(1.0);
-          sor.filter(*cloud_no_table);
+          sor.filter(*cloud_object);
 
-          *total_cloud += *cloud_no_table;
+          *total_cloud += *cloud_object;
 
-          RCLCPP_WARN(this->get_logger(), "Filtered cloud size: %zu points for detection: %s", cloud_no_table->size(), det.class_name.c_str());
+          RCLCPP_WARN(this->get_logger(), "Filtered cloud size: %zu points for detection: %s", cloud_object->size(), det.class_name.c_str());
 
           std::vector<int> indices;
-          pcl::removeNaNFromPointCloud(*cloud_no_table, *cloud_no_table, indices);
-          if (cloud_no_table->empty()) {
+          pcl::removeNaNFromPointCloud(*cloud_object, *cloud_object, indices);
+          if (cloud_object->empty()) {
             RCLCPP_WARN(this->get_logger(), "Cloud is empty after removing NaNs for detection: %s", det.class_name.c_str());
             continue;
           }
 
           bool all_nan = true;
-          for (const auto& pt : cloud_no_table->points) {
+          for (const auto& pt : cloud_object->points) {
             if (std::isfinite(pt.x) && std::isfinite(pt.y) && std::isfinite(pt.z)) {
               all_nan = false;
               break;
@@ -244,12 +243,12 @@ private:
           }
 
           Eigen::Vector4f centroid;
-          pcl::compute3DCentroid(*cloud_no_table, centroid);
+          pcl::compute3DCentroid(*cloud_object, centroid);
 
           RCLCPP_WARN(this->get_logger(), "Centroid for detection %s: (%f, %f, %f)", det.class_name.c_str(), centroid[0], centroid[1], centroid[2]);
 
           pcl::PointXYZRGB min_pt, max_pt;
-          pcl::getMinMax3D(*cloud_no_table, min_pt, max_pt);
+          pcl::getMinMax3D(*cloud_object, min_pt, max_pt);
 
           RCLCPP_WARN(this->get_logger(), "Bounding box for detection %s: min(%f, %f, %f), max(%f, %f, %f)", 
                        det.class_name.c_str(), min_pt.x, min_pt.y, min_pt.z, max_pt.x, max_pt.y, max_pt.z);
