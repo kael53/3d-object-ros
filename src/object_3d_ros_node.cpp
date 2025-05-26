@@ -165,6 +165,13 @@ private:
 
           RCLCPP_WARN(this->get_logger(), "Filtered cloud size: %zu points for detection: %s", cloud->size(), det.class_name.c_str());
 
+          std::vector<int> indices;
+          pcl::removeNaNFromPointCloud(*cloud, *cloud, indices);
+          if (cloud->empty()) {
+            RCLCPP_WARN(this->get_logger(), "Cloud is empty after removing NaNs for detection: %s", det.class_name.c_str());
+            continue;
+          }
+
           Eigen::Vector4f centroid;
           pcl::compute3DCentroid(*cloud, centroid);
 
