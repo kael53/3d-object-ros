@@ -50,7 +50,7 @@ public:
     depth_sub_.subscribe(this, "/camera/depth/image_raw");
     info_sub_.subscribe(this, "/camera/color/camera_info");
 
-    detections_sub_ = this->create_subscription<bboxes_ex_msgs::msg::BoundingBoxes>("/yolox/detections", 10,
+    detections_sub_ = this->create_subscription<bboxes_ex_msgs::msg::BoundingBoxes>("/yolox/bounding_boxes", 10,
         std::bind(&YoloxTo3DNode::detectionsCallback, this, std::placeholders::_1));
 
 
@@ -102,7 +102,7 @@ private:
     for (const auto &det : detections) {
       if (std::find(allowed_classes_.begin(), allowed_classes_.end(), det.class_name) == allowed_classes_.end())
         continue;
-      if (det.confidence < 0.5)
+      if (det.confidence < 0.3)
         continue;
 
       cv::Mat roi = depth(cv::Rect(det.x_min, det.y_min, det.x_max - det.x_min, det.y_max - det.y_min));
