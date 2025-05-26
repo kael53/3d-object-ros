@@ -122,6 +122,8 @@ private:
         continue;
       }
 
+      RCLCPP_DEBUG(this->get_logger(), "Processing detection: %s (confidence: %.2f)", det.class_name.c_str(), det.confidence);
+
       cv::Mat roi = depth(cv::Rect(det.x_min, det.y_min, det.x_max - det.x_min, det.y_max - det.y_min));
       pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
@@ -150,6 +152,8 @@ private:
         continue;
       }
 
+      RCLCPP_DEBUG(this->get_logger(), "Processing cloud with %zu points and coverage %f for detection: %s", cloud->size(), coverage, det.class_name.c_str());
+
       pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
       sor.setInputCloud(cloud);
       sor.setMeanK(20);
@@ -161,8 +165,13 @@ private:
       Eigen::Vector4f centroid;
       pcl::compute3DCentroid(*cloud, centroid);
 
+      RCLCPP_DEBUG(this->get_logger(), "Centroid for detection %s: (%f, %f, %f)", det.class_name.c_str(), centroid[0], centroid[1], centroid[2]);
+
       pcl::PointXYZRGB min_pt, max_pt;
       pcl::getMinMax3D(*cloud, min_pt, max_pt);
+
+      RCLCPP_DEBUG(this->get_logger(), "Bounding box for detection %s: min(%f, %f, %f), max(%f, %f, %f)", 
+                   det.class_name.c_str(), min_pt.x, min_pt.y, min_pt.z, max_pt.x, max_pt.y, max_pt.z);
 
       vision_msgs::msg::Detection3D detection;
       detection.header = rgb_msg->header;
