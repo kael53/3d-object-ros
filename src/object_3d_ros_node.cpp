@@ -145,7 +145,8 @@ private:
 
           for (int v = 0; v < roi.rows; ++v) {
             for (int u = 0; u < roi.cols; ++u) {
-              float Z = roi.at<float>(v, u);
+              uint16_t Z_raw = roi.at<uint16_t>(v, u);
+              float Z = static_cast<float>(Z_raw) * 0.001f; // Convert mm to meters
               if (!std::isfinite(Z) || Z <= 0.0 || Z > 3.0) continue;
               int img_x = u + det.x_min;
               int img_y = v + det.y_min;
