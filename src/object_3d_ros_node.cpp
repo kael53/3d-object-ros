@@ -183,12 +183,22 @@ private:
           seg.segment(*inliers, *coefficients);
 
           if (!inliers->indices.empty()) {
-            pcl::ExtractIndices<pcl::PointXYZRGB> extract;
-            extract.setInputCloud(cloud);
-            extract.setIndices(inliers);
-            extract.setNegative(true); // Remove the plane (table)
-            extract.filter(*cloud_no_table);
-            RCLCPP_WARN(this->get_logger(), "Filtered table plane: removed %zu points", inliers->indices.size());
+            // Compute plane equation: ax + by + cz + d = 0
+            float a = coefficients->values[0];
+            float b = coefficients->values[1];
+            float c = coefficients->values[2];
+            float d = coefficients->values[3];
+
+            pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+            for (const auto& pt : cloud->points) {
+                // Distance from point to plane
+                float dist = a * pt.x + b * pt.y + c * pt.z + d;
+                if (dist > 0.01) { // 1cm above the plane, adjust as needed
+                    filtered_cloud->points.push_back(pt);
+                }
+            }
+            *cloud_no_table = *filtered_cloud;
+            RCLCPP_WARN(this->get_logger(), "Filtered table plane: removed %zu points, kept %zu above plane", inliers->indices.size(), cloud_no_table->size());
           } else {
             *cloud_no_table = *cloud;
             RCLCPP_WARN(this->get_logger(), "No plane found for table filtering");
