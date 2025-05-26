@@ -99,113 +99,134 @@ private:
       return;
     }
 
-    cv::Mat rgb = cv_bridge::toCvShare(rgb_msg, "bgr8")->image;
-    cv::Mat depth = cv_bridge::toCvShare(depth_msg)->image;
+    try {
+      cv::Mat rgb = cv_bridge::toCvShare(rgb_msg, "bgr8")->image;
+      cv::Mat depth = cv_bridge::toCvShare(depth_msg)->image;
 
-    float fx = info_msg->k[0];
-    float fy = info_msg->k[4];
-    float cx = info_msg->k[2];
-    float cy = info_msg->k[5];
+      float fx = info_msg->k[0];
+      float fy = info_msg->k[4];
+      float cx = info_msg->k[2];
+      float cy = info_msg->k[5];
 
-    std::vector<Detection> detections = latest_detections_;
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr total_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-    vision_msgs::msg::Detection3DArray detection_array;
-    detection_array.header = rgb_msg->header;
+      std::vector<Detection> detections = latest_detections_;
+      pcl::PointCloud<pcl::PointXYZRGB>::Ptr total_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+      vision_msgs::msg::Detection3DArray detection_array;
+      detection_array.header = rgb_msg->header;
 
-    for (const auto &det : detections) {
-      if (std::find(allowed_classes_.begin(), allowed_classes_.end(), det.class_name) == allowed_classes_.end()) {
-        RCLCPP_DEBUG(this->get_logger(), "Skipping detection: %s", det.class_name.c_str());
-        continue;
-      }
-      if (det.confidence < 0.3) {
-        RCLCPP_DEBUG(this->get_logger(), "Skipping detection with low confidence: %s (%.2f)", det.class_name.c_str(), det.confidence);
-        continue;
-      }
+      for (const auto &det : detections) {
+        if (std::find(allowed_classes_.begin(), allowed_classes_.end(), det.class_name) == allowed_classes_.end()) {
+          RCLCPP_WARN(this->get_logger(), "Skipping detection: %s", det.class_name.c_str());
+          continue;
+        }
+        if (det.confidence < 0.3) {
+          RCLCPP_WARN(this->get_logger(), "Skipping detection with low confidence: %s (%.2f)", det.class_name.c_str(), det.confidence);
+          continue;
+        }
 
-      RCLCPP_DEBUG(this->get_logger(), "Processing detection: %s (confidence: %.2f)", det.class_name.c_str(), det.confidence);
+        RCLCPP_WARN(this->get_logger(), "Processing detection: %s (confidence: %.2f)", det.class_name.c_str(), det.confidence);
+        try {
+          cv::Mat roi = depth(cv::Rect(det.x_min, det.y_min, det.x_max - det.x_min, det.y_max - det.y_min));
+          pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
-      cv::Mat roi = depth(cv::Rect(det.x_min, det.y_min, det.x_max - det.x_min, det.y_max - det.y_min));
-      pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+          for (int v = 0; v < roi.rows; ++v) {
+            for (int u = 0; u < roi.cols; ++u) {
+              float Z = roi.at<float>(v, u);
+              if (Z <= 0.0 || Z > 3.0) continue;
+              float X = (u + det.x_min - cx) * Z / fx;
+              float Y = (v + det.y_min - cy) * Z / fy;
 
-      for (int v = 0; v < roi.rows; ++v) {
-        for (int u = 0; u < roi.cols; ++u) {
-          float Z = roi.at<float>(v, u);
-          if (Z <= 0.0 || Z > 3.0) continue;
-          float X = (u + det.x_min - cx) * Z / fx;
-          float Y = (v + det.y_min - cy) * Z / fy;
+              pcl::PointXYZRGB point;
+              point.x = X;
+              point.y = Y;
+              point.z = Z;
+              cv::Vec3b color = rgb.at<cv::Vec3b>(v + det.y_min, u + det.x_min);
+              point.r = color[2];
+              point.g = color[1];
+              point.b = color[0];
+              cloud->points.push_back(point);
+            }
+          }
 
-          pcl::PointXYZRGB point;
-          point.x = X;
-          point.y = Y;
-          point.z = Z;
-          cv::Vec3b color = rgb.at<cv::Vec3b>(v + det.y_min, u + det.x_min);
-          point.r = color[2];
-          point.g = color[1];
-          point.b = color[0];
-          cloud->points.push_back(point);
+          float coverage = float(cloud->size()) / (roi.rows * roi.cols);
+          if (coverage < 0.4) {
+            RCLCPP_WARN(this->get_logger(), "Skipping detection with low coverage: %s (coverage: %.2f)", det.class_name.c_str(), coverage);
+            continue;
+          }
+
+          RCLCPP_WARN(this->get_logger(), "Processing cloud with %zu points and coverage %f for detection: %s", cloud->size(), coverage, det.class_name.c_str());
+
+          pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
+          sor.setInputCloud(cloud);
+          sor.setMeanK(20);
+          sor.setStddevMulThresh(1.0);
+          sor.filter(*cloud);
+
+          *total_cloud += *cloud;
+
+          Eigen::Vector4f centroid;
+          pcl::compute3DCentroid(*cloud, centroid);
+
+          RCLCPP_WARN(this->get_logger(), "Centroid for detection %s: (%f, %f, %f)", det.class_name.c_str(), centroid[0], centroid[1], centroid[2]);
+
+          pcl::PointXYZRGB min_pt, max_pt;
+          pcl::getMinMax3D(*cloud, min_pt, max_pt);
+
+          RCLCPP_WARN(this->get_logger(), "Bounding box for detection %s: min(%f, %f, %f), max(%f, %f, %f)", 
+                       det.class_name.c_str(), min_pt.x, min_pt.y, min_pt.z, max_pt.x, max_pt.y, max_pt.z);
+
+          vision_msgs::msg::Detection3D detection;
+          detection.header = rgb_msg->header;
+
+          vision_msgs::msg::ObjectHypothesisWithPose hypo;
+          hypo.id = det.class_name;
+          hypo.score = det.confidence;
+          hypo.pose.pose.position.x = centroid[0];
+          hypo.pose.pose.position.y = centroid[1];
+          hypo.pose.pose.position.z = centroid[2];
+          hypo.pose.pose.orientation.w = 1.0;
+
+          detection.results.push_back(hypo);
+          detection.bbox.center = hypo.pose.pose;
+          detection.bbox.size.x = max_pt.x - min_pt.x;
+          detection.bbox.size.y = max_pt.y - min_pt.y;
+          detection.bbox.size.z = max_pt.z - min_pt.z;
+
+          detection_array.detections.push_back(detection);
+        } catch (const cv::Exception& e) {
+          RCLCPP_ERROR(this->get_logger(), "OpenCV exception in detection loop: %s", e.what());
+          continue;
+        } catch (const std::exception& e) {
+          RCLCPP_ERROR(this->get_logger(), "Standard exception in detection loop: %s", e.what());
+          continue;
+        } catch (...) {
+          RCLCPP_ERROR(this->get_logger(), "Unknown exception in detection loop");
+          continue;
         }
       }
 
-      float coverage = float(cloud->size()) / (roi.rows * roi.cols);
-      if (coverage < 0.4) {
-        RCLCPP_DEBUG(this->get_logger(), "Skipping detection with low coverage: %s (coverage: %.2f)", det.class_name.c_str(), coverage);
-        continue;
-      }
-
-      RCLCPP_DEBUG(this->get_logger(), "Processing cloud with %zu points and coverage %f for detection: %s", cloud->size(), coverage, det.class_name.c_str());
-
-      pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
-      sor.setInputCloud(cloud);
-      sor.setMeanK(20);
-      sor.setStddevMulThresh(1.0);
-      sor.filter(*cloud);
-
-      *total_cloud += *cloud;
-
-      Eigen::Vector4f centroid;
-      pcl::compute3DCentroid(*cloud, centroid);
-
-      RCLCPP_DEBUG(this->get_logger(), "Centroid for detection %s: (%f, %f, %f)", det.class_name.c_str(), centroid[0], centroid[1], centroid[2]);
-
-      pcl::PointXYZRGB min_pt, max_pt;
-      pcl::getMinMax3D(*cloud, min_pt, max_pt);
-
-      RCLCPP_DEBUG(this->get_logger(), "Bounding box for detection %s: min(%f, %f, %f), max(%f, %f, %f)", 
-                   det.class_name.c_str(), min_pt.x, min_pt.y, min_pt.z, max_pt.x, max_pt.y, max_pt.z);
-
-      vision_msgs::msg::Detection3D detection;
-      detection.header = rgb_msg->header;
-
-      vision_msgs::msg::ObjectHypothesisWithPose hypo;
-      hypo.id = det.class_name;
-      hypo.score = det.confidence;
-      hypo.pose.pose.position.x = centroid[0];
-      hypo.pose.pose.position.y = centroid[1];
-      hypo.pose.pose.position.z = centroid[2];
-      hypo.pose.pose.orientation.w = 1.0;
-
-      detection.results.push_back(hypo);
-      detection.bbox.center = hypo.pose.pose;
-      detection.bbox.size.x = max_pt.x - min_pt.x;
-      detection.bbox.size.y = max_pt.y - min_pt.y;
-      detection.bbox.size.z = max_pt.z - min_pt.z;
-
-      detection_array.detections.push_back(detection);
+      sensor_msgs::msg::PointCloud2 cloud_msg;
+      pcl::toROSMsg(*total_cloud, cloud_msg);
+      cloud_msg.header = rgb_msg->header;
+      pointcloud_pub_->publish(cloud_msg);
+      detection_pub_->publish(detection_array);
+    } catch (const cv::Exception& e) {
+      RCLCPP_ERROR(this->get_logger(), "OpenCV exception in imageCallback: %s", e.what());
+      return;
+    } catch (const std::exception& e) {
+      RCLCPP_ERROR(this->get_logger(), "Standard exception in imageCallback: %s", e.what());
+      return;
+    } catch (...) {
+      RCLCPP_ERROR(this->get_logger(), "Unknown exception in imageCallback");
+      return;
     }
-
-    sensor_msgs::msg::PointCloud2 cloud_msg;
-    pcl::toROSMsg(*total_cloud, cloud_msg);
-    cloud_msg.header = rgb_msg->header;
-    pointcloud_pub_->publish(cloud_msg);
-    detection_pub_->publish(detection_array);
   }
 
   void detectionsCallback(const bboxes_ex_msgs::msg::BoundingBoxes::SharedPtr msg) {
     latest_detections_.clear();
     for (const auto &d : msg->bounding_boxes) {
-      RCLCPP_DEBUG(this->get_logger(), "Received detection: %s with confidence %.2f", d.class_id.c_str(), d.probability);
+      RCLCPP_WARN(this->get_logger(), "Received detection: %s with confidence %.2f", d.class_id.c_str(), d.probability);
         if (std::find(allowed_classes_.begin(), allowed_classes_.end(), d.class_id) != allowed_classes_.end()) {
-            RCLCPP_DEBUG(this->get_logger(), "Adding detection: %s", d.class_id.c_str());
+            RCLCPP_WARN(this->get_logger(), "Adding detection: %s", d.class_id.c_str());
             latest_detections_.emplace_back(Detection{d.class_id, d.probability, d.xmin, d.ymin, d.xmax, d.ymax});
         }
     }
