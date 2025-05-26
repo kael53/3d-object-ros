@@ -47,7 +47,7 @@ public:
     RCLCPP_INFO(this->get_logger(), "3D Object Detection Node Initialized");
     
     rgb_sub_.subscribe(this, "/camera/color/image_raw");
-    depth_sub_.subscribe(this, "/camera/depth/image_raw");
+    depth_sub_.subscribe(this, "/camera/aligned_depth_to_color/image_raw");
     info_sub_.subscribe(this, "/camera/color/camera_info");
 
     detections_sub_ = this->create_subscription<bboxes_ex_msgs::msg::BoundingBoxes>("/yolox/bounding_boxes", 10,
