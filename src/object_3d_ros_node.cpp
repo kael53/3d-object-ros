@@ -94,6 +94,10 @@ private:
       RCLCPP_ERROR(this->get_logger(), "Received null message(s).");
       return;
     }
+    if ((rgb_msg->height != depth_msg->height) || (rgb_msg->width != depth_msg->width)) {
+      RCLCPP_ERRRO(this->get_logger(), "Image sizes are different.");
+      return;
+    }
 
     cv::Mat rgb = cv_bridge::toCvShare(rgb_msg, "bgr8")->image;
     cv::Mat depth = cv_bridge::toCvShare(depth_msg)->image;
