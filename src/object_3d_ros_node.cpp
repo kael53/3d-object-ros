@@ -131,9 +131,10 @@ private:
           for (int v = 0; v < roi.rows; ++v) {
             for (int u = 0; u < roi.cols; ++u) {
               float Z = roi.at<float>(v, u);
-              if (Z <= 0.0 || Z > 3.0) continue;
+              if (!std::isfinite(Z) || Z <= 0.0 || Z > 3.0) continue;
               float X = (u + det.x_min - cx) * Z / fx;
               float Y = (v + det.y_min - cy) * Z / fy;
+              if (!std::isfinite(X) || !std::isfinite(Y)) continue;
 
               pcl::PointXYZRGB point;
               point.x = X;
@@ -169,6 +170,19 @@ private:
           pcl::removeNaNFromPointCloud(*cloud, *cloud, indices);
           if (cloud->empty()) {
             RCLCPP_WARN(this->get_logger(), "Cloud is empty after removing NaNs for detection: %s", det.class_name.c_str());
+            continue;
+          }
+
+          bool all_nan = true;
+          for (const auto& pt : cloud->points) {
+            if (std::isfinite(pt.x) && std::isfinite(pt.y) && std::isfinite(pt.z)) {
+              all_nan = false;
+              break;
+            }
+          }
+
+          if (all_nan) {
+            RCLCPP_WARN(this->get_logger(), "All points are NaN/Inf for detection: %s", det.class_name.c_str());
             continue;
           }
 
