@@ -167,33 +167,59 @@ private:
             }
           }
 
-          float coverage = float(cloud->size()) / (roi.rows * roi.cols);
+          // --- RANSAC plane segmentation to remove table ---
+          pcl::SACSegmentation<pcl::PointXYZRGB> seg;
+          pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+          pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+          pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_no_table(new pcl::PointCloud<pcl::PointXYZRGB>());
+
+          seg.setOptimizeCoefficients(true);
+          seg.setModelType(pcl::SACMODEL_PLANE);
+          seg.setMethodType(pcl::SAC_RANSAC);
+          seg.setDistanceThreshold(0.015); // 1.5cm, adjust as needed
+          seg.setInputCloud(cloud);
+          seg.segment(*inliers, *coefficients);
+
+          if (!inliers->indices.empty()) {
+            pcl::ExtractIndices<pcl::PointXYZRGB> extract;
+            extract.setInputCloud(cloud);
+            extract.setIndices(inliers);
+            extract.setNegative(true); // Remove the plane (table)
+            extract.filter(*cloud_no_table);
+            RCLCPP_WARN(this->get_logger(), "Filtered table plane: removed %zu points", inliers->indices.size());
+          } else {
+            *cloud_no_table = *cloud;
+            RCLCPP_WARN(this->get_logger(), "No plane found for table filtering");
+          }
+
+          // Use cloud_no_table for further processing
+          float coverage = float(cloud_no_table->size()) / (roi.rows * roi.cols);
           if (coverage < 0.1) {
-            RCLCPP_WARN(this->get_logger(), "Skipping detection with low coverage: %s (coverage: %.2f)", det.class_name.c_str(), coverage);
+            RCLCPP_WARN(this->get_logger(), "Skipping detection with low coverage after table filtering: %s (coverage: %.2f)", det.class_name.c_str(), coverage);
             continue;
           }
 
-          RCLCPP_WARN(this->get_logger(), "Processing cloud with %zu points and coverage %f for detection: %s", cloud->size(), coverage, det.class_name.c_str());
+          RCLCPP_WARN(this->get_logger(), "Processing cloud with %zu points and coverage %f for detection: %s", cloud_no_table->size(), coverage, det.class_name.c_str());
 
           pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
-          sor.setInputCloud(cloud);
+          sor.setInputCloud(cloud_no_table);
           sor.setMeanK(20);
           sor.setStddevMulThresh(1.0);
-          sor.filter(*cloud);
+          sor.filter(*cloud_no_table);
 
-          *total_cloud += *cloud;
+          *total_cloud += *cloud_no_table;
 
-          RCLCPP_WARN(this->get_logger(), "Filtered cloud size: %zu points for detection: %s", cloud->size(), det.class_name.c_str());
+          RCLCPP_WARN(this->get_logger(), "Filtered cloud size: %zu points for detection: %s", cloud_no_table->size(), det.class_name.c_str());
 
           std::vector<int> indices;
-          pcl::removeNaNFromPointCloud(*cloud, *cloud, indices);
-          if (cloud->empty()) {
+          pcl::removeNaNFromPointCloud(*cloud_no_table, *cloud_no_table, indices);
+          if (cloud_no_table->empty()) {
             RCLCPP_WARN(this->get_logger(), "Cloud is empty after removing NaNs for detection: %s", det.class_name.c_str());
             continue;
           }
 
           bool all_nan = true;
-          for (const auto& pt : cloud->points) {
+          for (const auto& pt : cloud_no_table->points) {
             if (std::isfinite(pt.x) && std::isfinite(pt.y) && std::isfinite(pt.z)) {
               all_nan = false;
               break;
@@ -206,12 +232,12 @@ private:
           }
 
           Eigen::Vector4f centroid;
-          pcl::compute3DCentroid(*cloud, centroid);
+          pcl::compute3DCentroid(*cloud_no_table, centroid);
 
           RCLCPP_WARN(this->get_logger(), "Centroid for detection %s: (%f, %f, %f)", det.class_name.c_str(), centroid[0], centroid[1], centroid[2]);
 
           pcl::PointXYZRGB min_pt, max_pt;
-          pcl::getMinMax3D(*cloud, min_pt, max_pt);
+          pcl::getMinMax3D(*cloud_no_table, min_pt, max_pt);
 
           RCLCPP_WARN(this->get_logger(), "Bounding box for detection %s: min(%f, %f, %f), max(%f, %f, %f)", 
                        det.class_name.c_str(), min_pt.x, min_pt.y, min_pt.z, max_pt.x, max_pt.y, max_pt.z);
